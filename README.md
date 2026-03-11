@@ -21,6 +21,8 @@ Optional overrides:
 make CONFIG=FLASH
 make rom
 make ram
+make burn
+make burn-win
 make BOARD=SOM
 make PROFILE=debug_O0
 make SRC_DIRS="src app drivers"
@@ -41,3 +43,8 @@ make C29SDK_ROOT=/custom/path/to/f29h85x-sdk
 - It uses `device.c` from `examples/device_support/source` and `driverlib.lib` from SDK libraries.
 - The compiler/toolchain path comes from `imports.mak` (default expects CCS + C29 CGT under `~/ti`).
 - `make rom` performs a FLASH (`--rom_model`) build and generates a signed ROM-loadable image via `mcu_rom_image_gen.py`.
+- `make burn` builds FLASH and programs `build/out/<BOARD>/FLASH/f29h85x_makefile_example.out` using CCS DSS scripting (`dss.sh`).
+- `make burn-win` builds FLASH and programs from Windows using `uniflash.bat` (helps when XDS110 is attached to Windows, not WSL).
+- Burn defaults can be overridden:
+  `make burn CCXML=/path/to/target.ccxml CORE=C29xx_CPU1 BURN_CONFIG=FLASH BURN_IMAGE=/path/to/image.out`
+  `make burn-win WIN_UNIFLASH_EXE=C:\\ti\\ccs2041\\ccs\\ccs_base\\scripting\\examples\\uniflash\\cmdLine\\uniflash.bat`

@@ -13,6 +13,6 @@ int main(void)
     while(1)
     {
         GPIO_togglePin(DEVICE_GPIO_PIN_LED1);
-        DEVICE_DELAY_US(500000);
+        DEVICE_DELAY_US(100000);
     }
 }
