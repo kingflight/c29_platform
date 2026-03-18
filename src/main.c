@@ -30,6 +30,13 @@ volatile uint16_t adcResultA7 = 0U;
 volatile uint16_t adcResultB4 = 0U;
 volatile uint16_t adcResultC1 = 0U;
 
+static void enableBoosterPackPower(void)
+{
+    GPIO_writePin(19U, 0U);
+    GPIO_setPadConfig(19U, GPIO_PIN_TYPE_STD);
+    GPIO_setDirectionMode(19U, GPIO_DIR_MODE_OUT);
+}
+
 static void configurePwmPins(void)
 {
     uint32_t i;
@@ -118,6 +125,7 @@ int main(void)
 {
     Device_init();
     Device_initGPIO();
+    enableBoosterPackPower();
 
     ASysCtl_setVREF(ASYSCTL_VREFHIAB, ASYSCTL_VREF_INTERNAL_3_3_V);
 
