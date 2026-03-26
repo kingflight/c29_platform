@@ -1,34 +1,23 @@
 #include "device.h"
 #include "driverlib.h"
 
+#include <stdio.h>
+
 #define PWM_PERIOD_TICKS        1000U
 #define PWM_DUTY_TICKS          500U
 #define PWM_DEADBAND_TICKS      50U
 #define ADC_ACQPS_12BIT         14U
+#define UART_BAUD_RATE          115200U
+#define UART_TX_BUFFER_SIZE     128U
+#define PRINT_INTERVAL_US       500000U
 
-typedef struct
-{
-    uint32_t epwmBase;
-    uint32_t gpioAConfig;
-    uint32_t gpioBConfig;
-    uint32_t adcBase;
-    ADC_Channel adcChannel;
-    ADC_Trigger adcTrigger;
-} PwmAdcConfig;
+volatile uint16_t phaseCurrentA = 0U;
+volatile uint16_t phaseCurrentC = 0U;
+volatile uint16_t vrefCount = 0U;
+volatile uint16_t AS5600 = 0U;
+uint32_t isr_count = 0;
 
-static const PwmAdcConfig pwmAdcConfigs[] =
-{
-    {EPWM1_BASE, GPIO_0_EPWM1_A, GPIO_1_EPWM1_B, ADCC_BASE,
-     ADC_CH_ADCIN1, ADC_TRIGGER_EPWM1_SOCA},
-    {EPWM2_BASE, GPIO_2_EPWM2_A, GPIO_3_EPWM2_B, ADCB_BASE,
-     ADC_CH_ADCIN7, ADC_TRIGGER_EPWM2_SOCA},
-    {EPWM3_BASE, GPIO_4_EPWM3_A, GPIO_5_EPWM3_B, ADCA_BASE,
-     ADC_CH_ADCIN7, ADC_TRIGGER_EPWM3_SOCA},
-};
-
-volatile uint16_t adcResultA7 = 0U;
-volatile uint16_t adcResultB4 = 0U;
-volatile uint16_t adcResultC1 = 0U;
+__attribute__((interrupt("INT"))) void adcA1ISR(void);
 
 static void enableBoosterPackPower(void)
 {
@@ -39,14 +28,43 @@ static void enableBoosterPackPower(void)
 
 static void configurePwmPins(void)
 {
-    uint32_t i;
+    GPIO_setPinConfig(GPIO_0_EPWM1_A);
+    GPIO_setPinConfig(GPIO_1_EPWM1_B);
+    GPIO_setPinConfig(GPIO_2_EPWM2_A);
+    GPIO_setPinConfig(GPIO_3_EPWM2_B);
+    GPIO_setPinConfig(GPIO_4_EPWM3_A);
+    GPIO_setPinConfig(GPIO_5_EPWM3_B);
 
-    for(i = 0U; i < (sizeof(pwmAdcConfigs) / sizeof(pwmAdcConfigs[0])); i++)
+    GPIO_setPadConfig(0U, GPIO_PIN_TYPE_STD);
+    GPIO_setPadConfig(1U, GPIO_PIN_TYPE_STD);
+    GPIO_setPadConfig(2U, GPIO_PIN_TYPE_STD);
+    GPIO_setPadConfig(3U, GPIO_PIN_TYPE_STD);
+    GPIO_setPadConfig(4U, GPIO_PIN_TYPE_STD);
+    GPIO_setPadConfig(5U, GPIO_PIN_TYPE_STD);
+}
+
+static void configureUart(void)
+{
+    GPIO_setPinConfig(DEVICE_GPIO_CFG_UARTA_TX);
+    GPIO_setPadConfig(DEVICE_GPIO_PIN_UARTA_TX, GPIO_PIN_TYPE_STD);
+    GPIO_setQualificationMode(DEVICE_GPIO_PIN_UARTA_TX, GPIO_QUAL_ASYNC);
+
+    GPIO_setPinConfig(DEVICE_GPIO_CFG_UARTA_RX);
+    GPIO_setPadConfig(DEVICE_GPIO_PIN_UARTA_RX,
+                      GPIO_PIN_TYPE_STD | GPIO_PIN_TYPE_PULLUP);
+    GPIO_setQualificationMode(DEVICE_GPIO_PIN_UARTA_RX, GPIO_QUAL_ASYNC);
+
+    UART_setConfig(UARTA_BASE, DEVICE_SYSCLK_FREQ, UART_BAUD_RATE,
+                   UART_CONFIG_WLEN_8 | UART_CONFIG_STOP_ONE);
+    UART_enableModuleNonFIFO(UARTA_BASE);
+}
+
+static void writeUartString(const char *text)
+{
+    while(*text != '\0')
     {
-        GPIO_setPinConfig(pwmAdcConfigs[i].gpioAConfig);
-        GPIO_setPinConfig(pwmAdcConfigs[i].gpioBConfig);
-        GPIO_setPadConfig((uint32_t)(i * 2U), GPIO_PIN_TYPE_STD);
-        GPIO_setPadConfig((uint32_t)(i * 2U + 1U), GPIO_PIN_TYPE_STD);
+        UART_writeChar(UARTA_BASE, (uint8_t)*text);
+        text++;
     }
 }
 
@@ -97,13 +115,13 @@ static void configurePwmSync(void)
     EPWM_setCountModeAfterSync(EPWM3_BASE, EPWM_COUNT_MODE_UP_AFTER_SYNC);
 }
 
-static void configurePwmSoc(uint32_t base)
+static void configureMasterPwmSoc(void)
 {
-    EPWM_disableADCTrigger(base, EPWM_SOC_A);
-    EPWM_setADCTriggerSource(base, EPWM_SOC_A, EPWM_SOC_TBCTR_ZERO);
-    EPWM_setADCTriggerEventPrescale(base, EPWM_SOC_A, 1U);
-    EPWM_clearADCTriggerFlag(base, EPWM_SOC_A);
-    EPWM_enableADCTrigger(base, EPWM_SOC_A);
+    EPWM_disableADCTrigger(EPWM1_BASE, EPWM_SOC_A);
+    EPWM_setADCTriggerSource(EPWM1_BASE, EPWM_SOC_A, EPWM_SOC_TBCTR_PERIOD);
+    EPWM_setADCTriggerEventPrescale(EPWM1_BASE, EPWM_SOC_A, 1U);
+    EPWM_clearADCTriggerFlag(EPWM1_BASE, EPWM_SOC_A);
+    EPWM_enableADCTrigger(EPWM1_BASE, EPWM_SOC_A);
 }
 
 static void configureAdc(uint32_t base)
@@ -115,50 +133,94 @@ static void configureAdc(uint32_t base)
     DEVICE_DELAY_US(1000U);
 }
 
-static void configureAdcSoc(uint32_t base, ADC_Channel channel,
-                            ADC_Trigger trigger)
+static void configureAdcSoc(uint32_t base, ADC_SOCNumber socNumber,
+                            ADC_Channel channel)
 {
-    ADC_setupSOC(base, ADC_SOC_NUMBER0, trigger, channel, ADC_ACQPS_12BIT);
+    ADC_setupSOC(base, socNumber, ADC_TRIGGER_EPWM1_SOCA, channel,
+                 ADC_ACQPS_12BIT);
+}
+
+static void configureAdcInterrupt(void)
+{
+    ADC_setInterruptSource(ADCA_BASE, ADC_INT_NUMBER1, ADC_INT_TRIGGER_EOC0);
+    ADC_clearInterruptStatus(ADCA_BASE, ADC_INT_NUMBER1);
+    ADC_enableInterrupt(ADCA_BASE, ADC_INT_NUMBER1);
+    Interrupt_register(INT_ADCA1, &adcA1ISR);
+    Interrupt_enable(INT_ADCA1);
+}
+
+__attribute__((interrupt("INT"))) void adcA1ISR(void)
+{
+    isr_count++;
+    phaseCurrentA = ADC_readResult(ADCBRESULT_BASE, ADC_SOC_NUMBER0);
+    //phaseCurrentB = ADC_readResult(ADCARESULT_BASE, ADC_SOC_NUMBER0);
+    phaseCurrentC = ADC_readResult(ADCCRESULT_BASE, ADC_SOC_NUMBER0);
+    vrefCount = ADC_readResult(ADCARESULT_BASE, ADC_SOC_NUMBER0);
+    AS5600 = ADC_readResult(ADCERESULT_BASE, ADC_SOC_NUMBER0);
+    
+
+    ADC_clearInterruptStatus(ADCA_BASE, ADC_INT_NUMBER1);
+
+    if(ADC_getInterruptOverflowStatus(ADCA_BASE, ADC_INT_NUMBER1))
+    {
+        ADC_clearInterruptOverflowStatus(ADCA_BASE, ADC_INT_NUMBER1);
+        ADC_clearInterruptStatus(ADCA_BASE, ADC_INT_NUMBER1);
+    }
 }
 
 int main(void)
 {
+    char uartMessage[UART_TX_BUFFER_SIZE];
+    int messageLength;
+
     Device_init();
     Device_initGPIO();
     enableBoosterPackPower();
+    configureUart();
 
-    ASysCtl_setVREF(ASYSCTL_VREFHIAB, ASYSCTL_VREF_INTERNAL_3_3_V);
+    ASysCtl_setVREF(ASYSCTL_VREFHIAB, ASYSCTL_VREF_EXTERNAL);
+    ASysCtl_setVREF(ASYSCTL_VREFHICDE, ASYSCTL_VREF_EXTERNAL);
 
     configurePwmPins();
     configureAdc(ADCA_BASE);
     configureAdc(ADCB_BASE);
     configureAdc(ADCC_BASE);
+    configureAdc(ADCE_BASE);
 
-    configureAdcSoc(ADCC_BASE, ADC_CH_ADCIN1, ADC_TRIGGER_EPWM1_SOCA);
-    configureAdcSoc(ADCB_BASE, ADC_CH_ADCIN4, ADC_TRIGGER_EPWM2_SOCA);
-    configureAdcSoc(ADCA_BASE, ADC_CH_ADCIN7, ADC_TRIGGER_EPWM3_SOCA);
+    //configureAdcSoc(ADCA_BASE, ADC_SOC_NUMBER0, ADC_CH_ADCIN7); // not working
+    configureAdcSoc(ADCA_BASE, ADC_SOC_NUMBER0, ADC_CH_ADCIN0);  // VDC
+    configureAdcSoc(ADCB_BASE, ADC_SOC_NUMBER0, ADC_CH_ADCIN4);  // phase A
+    configureAdcSoc(ADCC_BASE, ADC_SOC_NUMBER0, ADC_CH_ADCIN1);  // phase C
+    configureAdcSoc(ADCE_BASE, ADC_SOC_NUMBER0, ADC_CH_ADCIN1);  // AS5600 analog out
+    configureAdcInterrupt();
 
     SysCtl_disablePeripheral(SYSCTL_PERIPH_CLK_TBCLKSYNC);
 
     configureComplementaryPwm(EPWM1_BASE);
-    EPWM_setCounterCompareValue(EPWM1_BASE, EPWM_COUNTER_COMPARE_A, 800);
-
     configureComplementaryPwm(EPWM2_BASE);
-    EPWM_setCounterCompareValue(EPWM2_BASE, EPWM_COUNTER_COMPARE_A, 700);
-
     configureComplementaryPwm(EPWM3_BASE);
-
     configurePwmSync();
-    configurePwmSoc(EPWM1_BASE);
-    configurePwmSoc(EPWM2_BASE);
-    configurePwmSoc(EPWM3_BASE);
+    configureMasterPwmSoc();
 
     SysCtl_enablePeripheral(SYSCTL_PERIPH_CLK_TBCLKSYNC);
 
+    ENINT;
+    Interrupt_enableGlobal();
+
+    writeUartString("Phase current monitor started\r\n");
+
     while(1)
     {
-        adcResultC1 = ADC_readResult(ADCCRESULT_BASE, ADC_SOC_NUMBER0);
-        adcResultB4 = ADC_readResult(ADCBRESULT_BASE, ADC_SOC_NUMBER0);
-        adcResultA7 = ADC_readResult(ADCARESULT_BASE, ADC_SOC_NUMBER0);
+        messageLength = snprintf(uartMessage, sizeof(uartMessage),
+                                 "IA=%u IC=%u VREF=%u AS5600=%u isr_cnt: %d\r\n",
+                                 phaseCurrentA, phaseCurrentC,
+                                 vrefCount, AS5600, isr_count);
+
+        if(messageLength > 0)
+        {
+            writeUartString(uartMessage);
+        }
+
+        DEVICE_DELAY_US(PRINT_INTERVAL_US);
     }
 }
