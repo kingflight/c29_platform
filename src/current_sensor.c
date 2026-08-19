@@ -3,6 +3,7 @@
 #include "device.h"
 #include "driverlib.h"
 
+#include "motor_control.h"
 #include "motor_state.h"
 
 #define ADC_ACQPS_12BIT 14U
@@ -53,6 +54,8 @@ __attribute__((interrupt("INT"))) void CurrentSensor_adcIsr(void)
         ADC_readResult(ADCCRESULT_BASE, ADC_SOC_NUMBER0);
     g_motorControlState.dc_bus_raw =
         ADC_readResult(ADCARESULT_BASE, ADC_SOC_NUMBER0);
+
+    MotorControl_runCurrentLoop();
 
     ADC_clearInterruptStatus(ADCA_BASE, ADC_INT_NUMBER1);
 

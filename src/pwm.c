@@ -1,10 +1,51 @@
 #include "pwm.h"
 
+#include "device.h"
 #include "driverlib.h"
 
 #define PWM_PERIOD_TICKS       1000U
 #define PWM_DUTY_TICKS         500U
 #define PWM_DEADBAND_TICKS     50U
+
+#define PWM_ALL_TRIP_ZONE_SIGNALS \
+    (EPWM_TZ_SIGNAL_CBC1 | EPWM_TZ_SIGNAL_CBC2 | EPWM_TZ_SIGNAL_CBC3 | \
+     EPWM_TZ_SIGNAL_CBC4 | EPWM_TZ_SIGNAL_CBC5 | EPWM_TZ_SIGNAL_CBC6 | \
+     EPWM_TZ_SIGNAL_DCAEVT2 | EPWM_TZ_SIGNAL_DCBEVT2 | \
+     EPWM_TZ_SIGNAL_OSHT1 | EPWM_TZ_SIGNAL_OSHT2 | EPWM_TZ_SIGNAL_OSHT3 | \
+     EPWM_TZ_SIGNAL_OSHT4 | EPWM_TZ_SIGNAL_OSHT5 | EPWM_TZ_SIGNAL_OSHT6 | \
+     EPWM_TZ_SIGNAL_DCAEVT1 | EPWM_TZ_SIGNAL_DCBEVT1)
+
+#define PWM_ALL_TRIP_ZONE2_SIGNALS \
+    (EPWM_TZ_SIGNAL_CAPEVT_OST | EPWM_TZ_SIGNAL_CAPEVT_CBC)
+
+static void clearAndDisableTripZone(uint32_t base)
+{
+    EPWM_disableTripZoneSignals(base, PWM_ALL_TRIP_ZONE_SIGNALS);
+    EPWM_disableTripZone2Signals(base, PWM_ALL_TRIP_ZONE2_SIGNALS);
+
+    EPWM_clearTripZoneFlag(base, EPWM_TZ_INTERRUPT | EPWM_TZ_FLAG_CBC |
+                                 EPWM_TZ_FLAG_OST | EPWM_TZ_FLAG_DCAEVT1 |
+                                 EPWM_TZ_FLAG_DCAEVT2 | EPWM_TZ_FLAG_DCBEVT1 |
+                                 EPWM_TZ_FLAG_DCBEVT2 | EPWM_TZ_FLAG_CAPEVT);
+    EPWM_clearCycleByCycleTripZoneFlag(base, EPWM_TZ_CBC_FLAG_1 |
+                                             EPWM_TZ_CBC_FLAG_2 |
+                                             EPWM_TZ_CBC_FLAG_3 |
+                                             EPWM_TZ_CBC_FLAG_4 |
+                                             EPWM_TZ_CBC_FLAG_5 |
+                                             EPWM_TZ_CBC_FLAG_6 |
+                                             EPWM_TZ_CBC_FLAG_DCAEVT2 |
+                                             EPWM_TZ_CBC_FLAG_DCBEVT2 |
+                                             EPWM_TZ_CBC_FLAG_CAPEVT);
+    EPWM_clearOneShotTripZoneFlag(base, EPWM_TZ_OST_FLAG_OST1 |
+                                        EPWM_TZ_OST_FLAG_OST2 |
+                                        EPWM_TZ_OST_FLAG_OST3 |
+                                        EPWM_TZ_OST_FLAG_OST4 |
+                                        EPWM_TZ_OST_FLAG_OST5 |
+                                        EPWM_TZ_OST_FLAG_OST6 |
+                                        EPWM_TZ_OST_FLAG_DCAEVT1 |
+                                        EPWM_TZ_OST_FLAG_DCBEVT1 |
+                                        EPWM_TZ_OST_FLAG_CAPEVT);
+}
 
 static void configurePwmPins(void)
 {
@@ -79,6 +120,27 @@ static void configureMasterPwmSoc(void)
     EPWM_enableADCTrigger(EPWM1_BASE, EPWM_SOC_A);
 }
 
+static float clampDuty(float duty)
+{
+    if(duty < 0.0f)
+    {
+        return 0.0f;
+    }
+
+    if(duty > 1.0f)
+    {
+        return 1.0f;
+    }
+
+    return duty;
+}
+
+static uint16_t dutyToCompare(float duty)
+{
+    duty = clampDuty(duty);
+    return (uint16_t)((1.0f - duty) * (float)PWM_PERIOD_TICKS);
+}
+
 void Pwm_init(void)
 {
     configurePwmPins();
@@ -88,8 +150,27 @@ void Pwm_init(void)
     configureComplementaryPwm(EPWM1_BASE);
     configureComplementaryPwm(EPWM2_BASE);
     configureComplementaryPwm(EPWM3_BASE);
+    clearAndDisableTripZone(EPWM1_BASE);
+    clearAndDisableTripZone(EPWM2_BASE);
+    clearAndDisableTripZone(EPWM3_BASE);
     configurePwmSync();
     configureMasterPwmSoc();
+    Pwm_setPhaseDutyCycles(0.5, 0.5, 0.5);
 
     SysCtl_enablePeripheral(SYSCTL_PERIPH_CLK_TBCLKSYNC);
+}
+
+void Pwm_setPhaseDutyCycles(float dutyA, float dutyB, float dutyC)
+{
+    EPWM_setCounterCompareValue(EPWM1_BASE, EPWM_COUNTER_COMPARE_A,
+                                dutyToCompare(dutyA));
+    EPWM_setCounterCompareValue(EPWM2_BASE, EPWM_COUNTER_COMPARE_A,
+                                dutyToCompare(dutyB));
+    EPWM_setCounterCompareValue(EPWM3_BASE, EPWM_COUNTER_COMPARE_A,
+                                dutyToCompare(dutyC));
+}
+
+float Pwm_getSwitchingFrequencyHz(void)
+{
+    return (float)DEVICE_SYSCLK_FREQ / (2.0f * (float)PWM_PERIOD_TICKS);
 }

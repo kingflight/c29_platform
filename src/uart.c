@@ -51,3 +51,16 @@ int Uart_printf(const char *format, ...)
 
     return(length);
 }
+
+int32_t Uart_readCharNonBlocking(void)
+{
+    return UART_readCharNonBlocking(UARTA_BASE);
+}
+
+void Uart_clearRxErrors(void)
+{
+    if(UART_getRxError(UARTA_BASE) != 0U)
+    {
+        UART_clearRxError(UARTA_BASE);
+    }
+}
