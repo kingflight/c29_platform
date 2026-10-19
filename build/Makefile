@@ -1,12 +1,11 @@
 PROJECT_ROOT := $(abspath ..)
 
-HOME ?= /home/sunshine/
 TARGET      ?= f29h85x_makefile_example
 PROFILE     ?= debug
 CONFIG      ?= RAM
 BOARD       ?= LAUNCHXL
 C29SDK_ROOT ?= $(HOME)/ti/f29h85x-sdk_26_00_00
-CCS_ROOT    ?= $(HOME)/ti/ccs2030/ccs
+CCS_ROOT    ?= $(HOME)/ti/ccs2101/ccs
 $(info $(C29SDK_ROOT))
 
 # Project source roots (relative to project root). Recursive scan is enabled.
@@ -23,14 +22,14 @@ BURN_DSS_JS  ?= $(PROJECT_ROOT)/build/scripts/burn_dss.js
 CCXML        ?= $(C29SDK_ROOT)/examples/device_support/targetconfigs/TMS320F29H850TU9.ccxml
 CORE         ?= C29xx_CPU1
 
-#include $(C29SDK_ROOT)/imports.mak
+include $(C29SDK_ROOT)/imports.mak
 
 OBJDIR := $(PROJECT_ROOT)/build/obj/$(BOARD)/$(CONFIG)
 BINDIR := $(PROJECT_ROOT)/build/out/$(BOARD)/$(CONFIG)
 
 CMD_SRCS := $(CMD_SRCS_$(CONFIG))
 CFLAGS   := $(CFLAGS_common) $(CFLAGS_$(PROFILE))
-INCLUDES := $(INCLUDES_common) -I $(PROJECT_ROOT)
+INCLUDES := $(INCLUDES_common) -I $(PROJECT_ROOT) -I$(PROJECT_ROOT)/src
 LFLAGS   := $(LFLAGS_common)
 
 comma := ,
@@ -59,8 +58,8 @@ print-sources:
 	@printf '%s\n' $(EXTRA_SRCS)
 
 $(OBJDIR)/%.o: $(PROJECT_ROOT)/%.c
-	$(MKDIR) $(dir $@)
-	echo Compiling999: $< $(COMPILER)
+	@$(MKDIR) $(dir $@)
+	@echo Compiling: $< 
 	$(COMPILER) -c $(CFLAGS) $(INCLUDES) -MMD -MP -o $@ $<
 
 define EXTRA_RULE

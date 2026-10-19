@@ -4,7 +4,7 @@
 
 //#include "board_io.h"
 //#include "shell.h"
-#include "uart.h"
+#include "uart1.h"
 
 #define PRINT_INTERVAL_US   500000U
 #define MAIN_LOOP_PERIOD_US 1000U
@@ -26,7 +26,7 @@ int main(void)
     //ENINT;
     //Interrupt_enableGlobal();
 
-    uart_printf("Motor control telemetry started\r\n");
+    uart1_printf("Motor control telemetry started\r\n");
 
     while(1)
     {

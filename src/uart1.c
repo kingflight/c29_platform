@@ -1,4 +1,4 @@
-#include "uart.h"
+#include "uart1.h"
 
 #include "device.h"
 #include "driverlib.h"
@@ -9,7 +9,7 @@
 #define UART_BAUD_RATE       115200U
 #define UART_PRINTF_BUF_SIZE 192U
 
-void uart_init(void)
+void uart1_init(void)
 {
     GPIO_setPinConfig(DEVICE_GPIO_CFG_UARTA_TX);
     GPIO_setPadConfig(DEVICE_GPIO_PIN_UARTA_TX, GPIO_PIN_TYPE_STD);
@@ -25,7 +25,7 @@ void uart_init(void)
     UART_enableModuleNonFIFO(UARTA_BASE);
 }
 
-void uart_writeString(const char *text)
+void uart1_writeString(const char *text)
 {
     while(*text != '\0')
     {
@@ -34,7 +34,7 @@ void uart_writeString(const char *text)
     }
 }
 
-int uart_printf(const char *format, ...)
+int uart1_printf(const char *format, ...)
 {
     va_list args;
     char buffer[UART_PRINTF_BUF_SIZE];
@@ -46,18 +46,18 @@ int uart_printf(const char *format, ...)
 
     if(length > 0)
     {
-        uart_writeString(buffer);
+        uart1_writeString(buffer);
     }
 
     return(length);
 }
 
-int32_t uart_readCharNonBlocking(void)
+int32_t uart1_readCharNonBlocking(void)
 {
     return UART_readCharNonBlocking(UARTA_BASE);
 }
 
-void uart_clearRxErrors(void)
+void uart1_clearRxErrors(void)
 {
     if(UART_getRxError(UARTA_BASE) != 0U)
     {
