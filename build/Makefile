@@ -120,7 +120,7 @@ ram:
 BURN_CONFIG ?= FLASH
 BURN_IMAGE ?= $(PROJECT_ROOT)/build/out/$(BOARD)/$(BURN_CONFIG)/$(TARGET).out
 BURN_CERT_IMAGE ?= $(PROJECT_ROOT)/build/out/$(BOARD)/$(BURN_CONFIG)/$(TARGET)_cert.bin
-burn: burn-check
+burn:
 	$(MAKE) CONFIG=$(BURN_CONFIG) all
 	@test -x "$(DSS_SH)" || (echo "ERROR: DSS launcher not found: $(DSS_SH)"; exit 1)
 	@test -f "$(BURN_DSS_JS)" || (echo "ERROR: DSS burn script not found: $(BURN_DSS_JS)"; exit 1)
@@ -128,24 +128,6 @@ burn: burn-check
 	@test -f "$(BURN_IMAGE)" || (echo "ERROR: Image not found: $(BURN_IMAGE)"; exit 1)
 	@echo "Burning $(BURN_IMAGE) via $(CCXML) (core: $(CORE))"
 	"$(DSS_SH)" "$(BURN_DSS_JS)" "$(CCXML)" "$(CORE)" "$(BURN_IMAGE)"
-
-burn-check:
-	@test -x "$(XDSDFU)" || (echo "ERROR: XDS110 utility not found: $(XDSDFU)"; exit 1)
-	@$(XDSDFU) -e 2>/dev/null | grep -q "Found [1-9][0-9]* devices" || \
-		(echo "ERROR: No XDS110 probe visible in this environment."; \
-		 echo "If using WSL2, attach USB probe with usbipd on Windows first."; \
-		 exit 2)
-
-# Burn using Windows-side UniFlash CLI (useful when probe is attached to Windows, not WSL).
-# Requires Windows CCS installed. Paths below are defaults and can be overridden.
-WIN_UNIFLASH_EXE ?= C:\\ti\\ccs2041\\ccs\\ccs_base\\scripting\\examples\\uniflash\\cmdLine\\uniflash.bat
-WIN_CCXML        ?= $(shell wslpath -m "$(CCXML)")
-WIN_BURN_IMAGE   ?= $(shell wslpath -m "$(BURN_CERT_IMAGE)")
-burn-win:
-	$(MAKE) CONFIG=$(BURN_CONFIG) all
-	@command -v powershell.exe >/dev/null || (echo "ERROR: powershell.exe not found"; exit 1)
-	@echo "Burning (Windows) $(WIN_BURN_IMAGE) via $(WIN_CCXML) (core: $(CORE))"
-	@powershell.exe -NoProfile -Command "\$$ErrorActionPreference='Stop'; if (!(Test-Path '$(WIN_UNIFLASH_EXE)')) { throw 'UniFlash not found: $(WIN_UNIFLASH_EXE)' }; \$$stageDir = Join-Path \$$env:TEMP 'f29h85x_makefile_example-uniflash'; New-Item -ItemType Directory -Force -Path \$$stageDir | Out-Null; \$$ccxmlLocal = Join-Path \$$stageDir ([System.IO.Path]::GetFileName('$(WIN_CCXML)')); \$$imageLocal = Join-Path \$$stageDir ([System.IO.Path]::GetFileName('$(WIN_BURN_IMAGE)')); Copy-Item -LiteralPath '$(WIN_CCXML)' -Destination \$$ccxmlLocal -Force; Copy-Item -LiteralPath '$(WIN_BURN_IMAGE)' -Destination \$$imageLocal -Force; \$$ccxmlArg = \$$ccxmlLocal.Replace('\','/'); \$$imageArg = \$$imageLocal.Replace('\','/'); Set-Location \$$stageDir; & '$(WIN_UNIFLASH_EXE)' -ccxml \$$ccxmlArg -core '$(CORE)' -programBin \$$imageArg 0x10000000 -targetOp reset; if (\$$LASTEXITCODE -ne 0) { exit \$$LASTEXITCODE }"
 
 clean:
 	-$(RMDIR) $(PROJECT_ROOT)/build/obj $(PROJECT_ROOT)/build/out
